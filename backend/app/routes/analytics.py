@@ -103,6 +103,34 @@ def _fairness(officers: list) -> dict:
     )
     return {"score": score, "label": label, "detail": detail}
 
+def _fatigue(officers: list) -> dict:
+    if not officers:
+        return {"score": 0, "label": "No data", "detail": ""}
+    total_nights = sum(o.get("night", 0) for o in officers)
+    total_mornings = sum(o.get("morning", 0) for o in officers)
+    if total_nights + total_mornings == 0:
+        return {"score": 0, "label": "No shifts", "detail": ""}
+    
+    fatigue_ratio = total_nights / (total_nights + total_mornings)
+    score = min(100, int(fatigue_ratio * 150)) # Heuristic scale
+    label = "High" if score > 70 else "Medium" if score > 40 else "Low"
+    return {"score": score, "label": label, "detail": f"{int(fatigue_ratio*100)}% of shifts are night shifts"}
+
+def _satisfaction(db: Session, team_id: int, year: int, month: int) -> dict:
+    from ..models import LeaveRequest
+    reqs = db.query(LeaveRequest).filter(
+        LeaveRequest.team_id == team_id,
+        LeaveRequest.start_date.like(f"{year}-{month:02d}%")
+    ).all()
+    if not reqs:
+        return {"score": 100, "label": "Excellent", "detail": "No leave requests to review"}
+    
+    approved = sum(1 for r in reqs if r.status == "approved")
+    rate = approved / len(reqs)
+    score = int(rate * 100)
+    label = "Excellent" if score >= 80 else "Good" if score >= 50 else "Poor"
+    return {"score": score, "label": label, "detail": f"{score}% of leave requests approved"}
+
 
 @router.get("/")
 def analytics(
@@ -117,6 +145,8 @@ def analytics(
             "current":  {"officers": [], "summary": {}, "exists": False},
             "trend":    [],
             "fairness": {"score": 0, "label": "No team", "detail": "You are not in a team"},
+            "fatigue":  {"score": 0, "label": "No team", "detail": "You are not in a team"},
+            "satisfaction": {"score": 0, "label": "No team", "detail": "You are not in a team"},
         }
 
     now = datetime.now()
@@ -146,4 +176,6 @@ def analytics(
         "current":  current,
         "trend":    trend,
         "fairness": _fairness(current.get("officers", [])),
+        "fatigue":  _fatigue(current.get("officers", [])),
+        "satisfaction": _satisfaction(db, user.team_id, year, month),
     }

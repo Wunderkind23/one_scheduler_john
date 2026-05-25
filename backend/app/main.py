@@ -19,9 +19,46 @@ from .routes.swaps       import router as swaps_router
 from .routes.leave_req   import router as leave_req_router
 from .routes.my_schedule import router as my_schedule_router
 from .routes.analytics   import router as analytics_router
+from .routes.preferences import router as preferences_router
+from .routes.notifications import router as notifications_router
+from .routes.calendar    import router as calendar_router
+from .routes.admin       import router as admin_router
+from .routes.chat        import router as chat_router
 from .tasks.apscheduler  import start_scheduler
 
 Base.metadata.create_all(bind=engine)
+
+def run_migrations():
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("SELECT max_consecutive_workdays FROM shift_models LIMIT 1"))
+        except Exception:
+            logger.info("Migrating: adding max_consecutive_workdays to shift_models")
+            try:
+                conn.execute(text("ALTER TABLE shift_models ADD COLUMN max_consecutive_workdays INTEGER DEFAULT 6"))
+            except Exception as e:
+                logger.warning(f"Failed to add max_consecutive_workdays: {e}")
+                
+        try:
+            conn.execute(text("SELECT min_rest_hours_between_shifts FROM shift_models LIMIT 1"))
+        except Exception:
+            logger.info("Migrating: adding min_rest_hours_between_shifts to shift_models")
+            try:
+                conn.execute(text("ALTER TABLE shift_models ADD COLUMN min_rest_hours_between_shifts INTEGER DEFAULT 12"))
+            except Exception as e:
+                logger.warning(f"Failed to add min_rest_hours_between_shifts: {e}")
+
+        try:
+            conn.execute(text("SELECT is_superadmin FROM users LIMIT 1"))
+        except Exception:
+            logger.info("Migrating: adding is_superadmin to users")
+            try:
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_superadmin BOOLEAN DEFAULT FALSE"))
+            except Exception as e:
+                logger.warning(f"Failed to add is_superadmin: {e}")
+
+run_migrations()
 
 app = FastAPI(title="SMO Team Scheduler", version="4.0.0")
 
@@ -46,6 +83,11 @@ app.include_router(swaps_router)
 app.include_router(leave_req_router)
 app.include_router(my_schedule_router)
 app.include_router(analytics_router)
+app.include_router(preferences_router)
+app.include_router(calendar_router, prefix="/api/calendar", tags=["calendar"])
+app.include_router(notifications_router)
+app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
+app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 
 
 @app.on_event("startup")
@@ -92,6 +134,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         "role":         role,
         "team_id":      user.team_id,
         "team_name":    team.name if team else None,
+        "is_superadmin": getattr(user, "is_superadmin", False),
     }
 
 
@@ -105,6 +148,7 @@ def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)
         "role":         role,
         "team_id":      user.team_id,
         "team_name":    team.name if team else None,
+        "is_superadmin": getattr(user, "is_superadmin", False),
     }
 
 

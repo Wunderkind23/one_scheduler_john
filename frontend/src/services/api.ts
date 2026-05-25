@@ -1,7 +1,7 @@
 import axios from "axios";
 import { API_BASE_URL } from "../config/env";
 
-const api = axios.create({ baseURL: API_BASE_URL });
+export const api = axios.create({ baseURL: API_BASE_URL });
 
 // ── Send token with every request ─────────────────────────────────────────────
 api.interceptors.request.use((config) => {
@@ -26,13 +26,14 @@ api.interceptors.response.use(
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type UserSession = {
-  token:        string;
-  email:        string;
+export interface UserSession {
+  token: string;
+  email: string;
   display_name: string;
-  role:         "teamlead" | "officer" | "no_team";
-  team_id:      number | null;
-  team_name:    string | null;
+  role: "teamlead" | "officer" | "no_team";
+  team_id: number | null;
+  team_name: string | null;
+  is_superadmin: boolean;
 };
 
 export type Officer = {
@@ -89,6 +90,7 @@ export type ShiftModelRecord = {
   working_days:         string[] | null;
   max_concurrent_leave: number;
   night_continues:      boolean;
+  no_night_before_leave: boolean;
 };
 
 // ── Aliases for backward compatibility with components ──
@@ -181,6 +183,8 @@ export const previewSchedule = async (p: {
   leaveMap:        Record<string, LeaveRange>;
   shift_model_id?: number | null;
   reset_rotation?: boolean;
+  no_night_before_leave?: boolean;
+  use_ai?: boolean;
 }) =>
   (await api.post("/api/schedules/preview", {
     year:           p.year,
@@ -191,6 +195,8 @@ export const previewSchedule = async (p: {
     })),
     shift_model_id: p.shift_model_id ?? undefined,
     reset_rotation: p.reset_rotation ?? false,
+    no_night_before_leave: p.no_night_before_leave ?? false,
+    use_ai: p.use_ai ?? false,
   })).data as {
     schedule:      any[];
     summary:       any[];
@@ -283,6 +289,7 @@ export const createShiftModel = async (d: {
   working_days?:        string[] | null;
   max_concurrent_leave: number;
   night_continues:      boolean;
+  no_night_before_leave: boolean;
 }) => (await api.post("/api/shift-models/", d)).data as ShiftModelRecord;
 
 export const updateShiftModel = async (id: number, d: {
@@ -291,6 +298,7 @@ export const updateShiftModel = async (id: number, d: {
   working_days?:        string[] | null;
   max_concurrent_leave: number;
   night_continues:      boolean;
+  no_night_before_leave: boolean;
 }) => (await api.put(`/api/shift-models/${id}`, d)).data as ShiftModelRecord;
 
 export const deleteShiftModel = async (id: number) =>
@@ -354,5 +362,61 @@ export const reviewLeaveRequest = reviewLeave;
 export const createOfficer = addOfficer;
 export const deleteOfficer = removeOfficer;
 export const createHoliday = addHoliday;
+
+// ── Shift Preferences ─────────────────────────────────────────────────────────
+
+export type ShiftPref = {
+  id:                  number;
+  team_id:             number;
+  officer_id:          number;
+  officer_name:        string;
+  year:                number;
+  month:               number;
+  preferred_off_dates: string[];
+  created_at:          string;
+};
+
+export const fetchPreferences = async (year?: number, month?: number): Promise<ShiftPref[]> => {
+  const params: any = {};
+  if (year)  params.year  = year;
+  if (month) params.month = month;
+  return (await api.get("/api/preferences/", { params })).data;
+};
+
+export const submitPreferences = async (data: {
+  year:                number;
+  month:               number;
+  preferred_off_dates: string[];
+}) => (await api.post("/api/preferences/", data)).data;
+
+export const deletePreference = async (id: number) =>
+  (await api.delete(`/api/preferences/${id}`)).data;
+
+// ── Schedule Publishing & Auto-Draft ──────────────────────────────────────────
+
+export const publishSchedule = async (scheduleId: number) =>
+  (await api.put(`/api/schedules/${scheduleId}/publish`)).data;
+
+export const triggerAutoDraft = async () =>
+  (await api.post("/api/schedules/auto-draft")).data;
+
+export const claimSwap = async (swapId: number) =>
+  (await api.put(`/api/swaps/${swapId}/claim`)).data;
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export type AppNotification = {
+  id: number;
+  message: string;
+  is_read: boolean;
+  link: string | null;
+  created_at: string;
+};
+
+export const fetchNotifications = async () =>
+  (await api.get("/api/notifications/")).data as AppNotification[];
+
+export const markNotificationsRead = async () =>
+  (await api.put("/api/notifications/mark-read")).data;
 
 export default api;

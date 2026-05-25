@@ -81,6 +81,9 @@ def generate_schedule(
     leave_map:    Dict[str, List[str]],
     shift_model   = None,
     start_offset: int = 0,
+    no_night_before_leave: bool = False,
+    historical_counts: Dict[str, int] = None,
+    preferred_off: Dict[str, List[str]] = None,
 ) -> Tuple[List[dict], int]:
     """
     Pattern-based schedule generator. 
@@ -94,6 +97,13 @@ def generate_schedule(
     pattern      = getattr(shift_model, "rotation_pattern", None)
     night_cont   = getattr(shift_model, "night_continues", True)
     working_days = getattr(shift_model, "working_days", None)
+    no_night     = getattr(shift_model, "no_night_before_leave", False) if shift_model else no_night_before_leave
+    max_consec   = getattr(shift_model, "max_consecutive_workdays", 6)
+    if max_consec is None:
+        max_consec = 6
+    min_rest     = getattr(shift_model, "min_rest_hours_between_shifts", 12)
+    if min_rest is None:
+        min_rest = 12
     
     # Setup shift requirements array for dynamic balancing
     shift_reqs = []
@@ -103,12 +113,14 @@ def generate_schedule(
             shift_reqs.append({
                 "name": name,
                 "count": int(s.get("count", 2)),
-                "display": f"{name} ({s.get('start_time','?')} - {s.get('end_time','?')})"
+                "display": f"{name} ({s.get('start_time','?')} - {s.get('end_time','?')})",
+                "start_time": s.get("start_time", "08:00"),
+                "end_time": s.get("end_time", "16:00")
             })
     else:
         shift_reqs = [
-            {"name": "Morning", "count": SMO_MORNING, "display": "Morning (7AM - 5PM)"},
-            {"name": "Night",   "count": SMO_NIGHT,   "display": "Night (5PM - 12AM)"}
+            {"name": "Morning", "count": SMO_MORNING, "display": "Morning (7AM - 5PM)", "start_time": "07:00", "end_time": "17:00"},
+            {"name": "Night",   "count": SMO_NIGHT,   "display": "Night (5PM - 12AM)", "start_time": "17:00", "end_time": "07:00"}
         ]
 
     # Map shift names to display columns
@@ -131,9 +143,13 @@ def generate_schedule(
     prev_night: List[str]  = []
 
     # Track state for dynamic balancing
-    shift_counts = {o: 0 for o in officers}
+    shift_counts = {}
+    for o in officers:
+        shift_counts[o] = historical_counts.get(o, 0) if historical_counts else 0
     last_shift_name = {o: None for o in officers}
     last_shift_day = {o: -2 for o in officers}
+    consecutive_workdays = {o: 0 for o in officers}
+    pref_off = preferred_off or {}
 
     # 4. Generate Daily Rows
     for d in range(num_days):
@@ -153,65 +169,104 @@ def generate_schedule(
 
         if not is_working_day:
             row["Off"] = [f"{o} (Leave)" if day_str in leave_map.get(o, []) else o for o in officers]
-        else:
-            # 1. Valid Candidates (Not on leave, and didn't work yesterday)
-            valid_candidates = []
             for o in officers:
-                if day_str in leave_map.get(o, []):
-                    continue
-                # Enforce: "if an officer is working today it automatically take the next day as off"
-                if last_shift_day[o] == d - 1 and last_shift_name[o] not in ["Off", None]:
-                    continue
-                valid_candidates.append(o)
-                
-            # 2. Base Intent (What were they supposed to do according to the pattern?)
+                consecutive_workdays[o] = 0
+        else:
+            # 1. Base Intent (What were they supposed to do according to the pattern?)
             base_intent = {}
-            for o in valid_candidates:
+            for o in officers:
                 idx = (start_offset + d + officers.index(o)) % pat_len
                 base_intent[o] = pattern[idx]
                 
             day_assignments = {} # o -> shift_name
             assigned_today = set()
             
-            # 3. Fill exactly 'needed' for each shift
+            # 2. Fill exactly 'needed' for each shift
             for req in shift_reqs:
                 s_name = req["name"]
                 needed = req["count"]
                 
-                # Group A: Those who were supposed to work this shift
-                supposed = [o for o in valid_candidates if base_intent[o] == s_name and o not in assigned_today]
+                is_night_shift = "night" in s_name.lower()
                 
+                # Filter candidates who are not assigned yet today
+                candidates = [o for o in officers if o not in assigned_today]
+                
+                def get_penalty(o: str) -> float:
+                    # On leave?
+                    if day_str in leave_map.get(o, []):
+                        return 999999.0
+                        
+                    # Max Consecutive Workdays check
+                    if consecutive_workdays[o] >= max_consec:
+                        return 999999.0
+                        
+                    # No night shift before leave check
+                    if no_night and is_night_shift:
+                        tomorrow_date = cur_date + timedelta(days=1)
+                        tomorrow_str = tomorrow_date.isoformat()
+                        if tomorrow_str in leave_map.get(o, []):
+                            return 999999.0
+                            
+                    # Rest Hours check (between last shift end and proposed shift start)
+                    if last_shift_name[o] and last_shift_day[o] >= d - 2:
+                        prev_shift_info = next((sr for sr in shift_reqs if sr["name"] == last_shift_name[o]), None)
+                        if prev_shift_info:
+                            prev_end_t = prev_shift_info.get("end_time") or ("17:00" if "morning" in last_shift_name[o].lower() else "07:00")
+                            prev_start_t = prev_shift_info.get("start_time") or ("07:00" if "morning" in last_shift_name[o].lower() else "17:00")
+                            prev_day_date = start_date + timedelta(days=last_shift_day[o])
+                            
+                            try:
+                                prev_end_dt = datetime.combine(prev_day_date, datetime.strptime(prev_end_t, "%H:%M").time())
+                                if prev_end_t <= prev_start_t: # Overnight shift
+                                    prev_end_dt += timedelta(days=1)
+                            except Exception:
+                                prev_end_dt = datetime.combine(prev_day_date + timedelta(days=1), datetime.strptime("07:00", "%H:%M").time())
+                                
+                            prop_start_t = req.get("start_time") or ("07:00" if "morning" in s_name.lower() else "17:00")
+                            try:
+                                prop_start_dt = datetime.combine(cur_date, datetime.strptime(prop_start_t, "%H:%M").time())
+                            except Exception:
+                                prop_start_dt = datetime.combine(cur_date, datetime.strptime("07:00", "%H:%M").time())
+                                
+                            gap_hours = (prop_start_dt - prev_end_dt).total_seconds() / 3600.0
+                            if gap_hours < min_rest:
+                                return 999999.0
+                                
+                    # Base equity score (shifts worked so far)
+                    score = shift_counts[o] * 10.0
+                    
+                    # Preference penalty
+                    if day_str in pref_off.get(o, []):
+                        score += 1000.0
+                        
+                    # Pattern mismatch penalty
+                    intent = base_intent.get(o, "Off")
+                    if intent != s_name:
+                        score += 100.0
+                        
+                    return score
+
+                # Sort by penalty
+                candidates.sort(key=get_penalty)
+                
+                # Check for valid candidates (penalty < 900000)
                 selected = []
-                if len(supposed) > needed:
-                    # Too many -> take the ones with least shifts worked
-                    supposed.sort(key=lambda x: shift_counts[x])
-                    selected = supposed[:needed]
-                else:
-                    selected = supposed
-                    
-                # If short -> draft from those supposed to be 'Off'
-                if len(selected) < needed:
-                    covers_off = [o for o in valid_candidates if base_intent[o] == "Off" and o not in assigned_today]
-                    covers_off.sort(key=lambda x: shift_counts[x])
-                    needed_more = needed - len(selected)
-                    selected.extend(covers_off[:needed_more])
-                    
-                # If STILL short -> draft from anyone available
-                if len(selected) < needed:
-                    covers_other = [o for o in valid_candidates if o not in assigned_today and o not in selected]
-                    covers_other.sort(key=lambda x: shift_counts[x])
-                    needed_more = needed - len(selected)
-                    selected.extend(covers_other[:needed_more])
-                    
+                for o in candidates:
+                    if len(selected) >= needed:
+                        break
+                    if get_penalty(o) < 900000.0:
+                        selected.append(o)
+                        
                 # Record assignments
                 for o in selected:
                     day_assignments[o] = s_name
                     assigned_today.add(o)
 
-            # 4. Write row & update stats
+            # 3. Write row & update stats
             for o in officers:
                 if day_str in leave_map.get(o, []):
                     row["Off"].append(f"{o} (Leave)")
+                    consecutive_workdays[o] = 0
                 elif o in assigned_today:
                     s = day_assignments[o]
                     col = shift_cols[s]
@@ -219,17 +274,15 @@ def generate_schedule(
                     shift_counts[o] += 1
                     last_shift_name[o] = s
                     last_shift_day[o] = d
+                    consecutive_workdays[o] += 1
                 else:
                     row["Off"].append(o)
+                    consecutive_workdays[o] = 0
 
         # Convert lists to strings
         for k in row:
             if isinstance(row[k], list):
                 row[k] = ", ".join(row[k])
-        
-        # Add 12AM-7AM column if night shift continues
-        if night_cont:
-            row["12AM - 7AM (prev night)"] = ", ".join(prev_night)
 
         schedule.append(row)
         
@@ -326,3 +379,35 @@ def extract_assignments(schedule: List[dict]) -> List[dict]:
                         "is_leave":     on_leave,
                     })
     return assignments
+
+def sync_assignments_for_schedule(schedule, db):
+    from ..models import ShiftAssignment, Officer
+    import json
+    import logging
+
+    # Clear existing assignments
+    db.query(ShiftAssignment).filter(ShiftAssignment.schedule_id == schedule.id).delete()
+    
+    # Get active officers for this team
+    officers = db.query(Officer).filter(
+        Officer.team_id == schedule.team_id,
+        Officer.is_active == True
+    ).all()
+    off_dict = {o.name: o for o in officers}
+    
+    try:
+        data = json.loads(schedule.data)
+        for a in extract_assignments(data):
+            o = off_dict.get(a["officer_name"])
+            if o:
+                db.add(ShiftAssignment(
+                    schedule_id = schedule.id,
+                    officer_id  = o.id,
+                    date        = a["date_iso"],
+                    shift_name  = a["shift_name"],
+                    is_leave    = a["is_leave"],
+                ))
+                o.last_assigned_shift = a["shift_name"]
+        db.commit()
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to sync assignments for schedule {schedule.id}: {e}")

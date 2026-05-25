@@ -9,6 +9,8 @@ type SwapRequest = {
   target_name: string;
   requester_date: string;
   target_date: string;
+  requester_shift?: string | null;
+  target_shift?: string | null;
   reason?: string;
   status: "pending" | "accepted" | "rejected" | "cancelled";
   created_at: string;
@@ -229,11 +231,11 @@ export default function ShiftSwapPanel({ officerNames, scheduleId, currentUser }
                       <span className="text-[#7b1e3a]">{s.requester_name}</span>
                       <span className="text-gray-400 mx-1">gives away</span>
                       <span className="font-mono text-xs bg-white border border-gray-200 px-1.5 py-0.5 rounded">
-                        {s.requester_date}
+                        {s.requester_date} {s.requester_shift ? `(${s.requester_shift})` : ""}
                       </span>
                       <span className="text-gray-400 mx-1">↔ takes</span>
                       <span className="font-mono text-xs bg-white border border-gray-200 px-1.5 py-0.5 rounded">
-                        {s.target_date}
+                        {s.target_date} {s.target_shift ? `(${s.target_shift})` : ""}
                       </span>
                       <span className="text-gray-400 mx-1">from</span>
                       <span className="text-[#7b1e3a]">{s.target_name}</span>
@@ -285,7 +287,7 @@ export default function ShiftSwapPanel({ officerNames, scheduleId, currentUser }
                 <span className="text-gray-700">
                   {s.requester_name} ↔ {s.target_name}
                   <span className="text-gray-400 text-xs ml-2">
-                    {s.requester_date} / {s.target_date}
+                    {s.requester_date} {s.requester_shift ? `(${s.requester_shift})` : ""} / {s.target_date} {s.target_shift ? `(${s.target_shift})` : ""}
                   </span>
                 </span>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[s.status] ?? "bg-gray-100 text-gray-600"}`}>

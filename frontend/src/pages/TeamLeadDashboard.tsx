@@ -19,10 +19,13 @@ import {
   fetchShiftModels, createShiftModel, deleteShiftModel,
   fetchHolidays, addHoliday, deleteHoliday, seedNigerianHolidays,
   fetchAnalytics, getSettings, saveSettings,
+  publishSchedule, triggerAutoDraft,
   type UserSession, type Officer, type LeaveReq, type SwapReq, type LeaveRange,
 } from "../services/api";
 import toast from "react-hot-toast";
 import SterlingLogo from "../components/SterlingLogo";
+import NotificationBell from "../components/NotificationBell";
+import ChatPanel from "../components/ChatPanel";
 
 // ── Embedded ShiftModelForm ───────────────────────────────────────────────────
 const ALL_DAYS    = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
@@ -42,6 +45,9 @@ function ShiftModelForm({ onSave, onCancel }: { onSave:(p:any)=>Promise<void>; o
   const [allDays,     setAllDays]     = useState(true);
   const [maxLeave,    setMaxLeave]    = useState(1);
   const [nightCont,   setNightCont]   = useState(true);
+  const [noNightBeforeLeave, setNoNightBeforeLeave] = useState(false);
+  const [maxConsecutiveWorkdays, setMaxConsecutiveWorkdays] = useState(6);
+  const [minRestHoursBetweenShifts, setMinRestHoursBetweenShifts] = useState(12);
   const [err,         setErr]         = useState("");
   const [saving,      setSaving]      = useState(false);
 
@@ -80,7 +86,10 @@ function ShiftModelForm({ onSave, onCancel }: { onSave:(p:any)=>Promise<void>; o
         working_days:         allDays ? null : days,
         max_concurrent_leave: maxLeave,
         night_continues:      nightCont,
+        no_night_before_leave: noNightBeforeLeave,
         rotation_pattern:     pattern,
+        max_consecutive_workdays: maxConsecutiveWorkdays,
+        min_rest_hours_between_shifts: minRestHoursBetweenShifts,
       });
     } catch (e:any) {
       setErr(e?.response?.data?.detail ?? e?.message ?? "Failed to save.");
@@ -210,10 +219,33 @@ function ShiftModelForm({ onSave, onCancel }: { onSave:(p:any)=>Promise<void>; o
               <p className="text-[10px] text-gray-400 leading-relaxed italic">Max officers allowed on leave per day.</p>
             </div>
           </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Max Consecutive Workdays</label>
+            <div className="flex items-center gap-4">
+              <input type="number" min={1} max={14} value={maxConsecutiveWorkdays}
+                onChange={e=>setMaxConsecutiveWorkdays(Math.max(1,Number(e.target.value)))}
+                className="w-24 input-field" />
+              <p className="text-[10px] text-gray-400 leading-relaxed italic">Max consecutive workdays before a required off day.</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Min Rest Hours Between Shifts</label>
+            <div className="flex items-center gap-4">
+              <input type="number" min={0} max={48} value={minRestHoursBetweenShifts}
+                onChange={e=>setMinRestHoursBetweenShifts(Math.max(0,Number(e.target.value)))}
+                className="w-24 input-field" />
+              <p className="text-[10px] text-gray-400 leading-relaxed italic">Minimum required hours of rest between consecutive shifts.</p>
+            </div>
+          </div>
           <label className="flex items-center gap-3 cursor-pointer group">
             <input type="checkbox" checked={nightCont}
               onChange={e=>setNightCont(e.target.checked)} className="rounded-md border-gray-300 text-[#7b1e3a] focus:ring-[#7b1e3a]" />
             <span className="text-xs font-semibold text-gray-700 group-hover:text-[#7b1e3a] transition">Night shift continues to next day morning</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <input type="checkbox" checked={noNightBeforeLeave}
+              onChange={e=>setNoNightBeforeLeave(e.target.checked)} className="rounded-md border-gray-300 text-[#7b1e3a] focus:ring-[#7b1e3a]" />
+            <span className="text-xs font-semibold text-gray-700 group-hover:text-[#7b1e3a] transition">No night shift before leave</span>
           </label>
         </div>
 
@@ -248,6 +280,8 @@ export default function TeamLeadDashboard({ session, onLogout }:Props) {
   const [month,         setMonth]         = useState(today.getMonth()+1);
   const [shiftModelId,  setShiftModelId]  = useState<number|null>(null);
   const [resetRot,      setResetRot]      = useState(false);
+  const [useAI,         setUseAI]         = useState(false);
+  const [noNightBeforeLeaveSMO, setNoNightBeforeLeaveSMO] = useState(false);
   const [officers,      setOfficers]      = useState<Officer[]>([]);
   const [leaveMap,      setLeaveMap]      = useState<Record<string,LeaveRange>>({});
   const [leaveOpen,     setLeaveOpen]     = useState(false);
@@ -322,7 +356,7 @@ export default function TeamLeadDashboard({ session, onLogout }:Props) {
     setLoading(true); setError(""); setPreview([]); setSummary([]);
     setSavedId(null); setOfficersUsed([]); setWarnings([]); setHolidayDates([]);
     try {
-      const res = await previewSchedule({ year, month, leaveMap, shift_model_id:shiftModelId, reset_rotation:resetRot });
+      const res = await previewSchedule({ year, month, leaveMap, shift_model_id:shiftModelId, reset_rotation:resetRot, no_night_before_leave:noNightBeforeLeaveSMO, use_ai: useAI });
       setPreview(res.schedule); setSummary(res.summary); setNextOffset(res.next_offset);
       setOfficersUsed(res.officers_used??[]); setWarnings(res.warnings??[]); setHolidayDates(res.holidays??[]);
     } catch(e:any){ setError(e.response?.data?.detail??"Failed to generate."); }
@@ -452,7 +486,11 @@ export default function TeamLeadDashboard({ session, onLogout }:Props) {
                 <span className="text-white text-xs font-bold">{session.display_name||session.email}</span>
                 <span className="text-white/50 text-[10px] font-medium uppercase tracking-wider">Administrator</span>
               </div>
-              <button onClick={onLogout} className="bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold px-4 py-2 rounded-xl transition-all text-xs active:scale-95">Logout</button>
+              <div className="flex items-center gap-2 text-white">
+                <NotificationBell />
+                <div className="h-6 w-[1px] bg-white/20 hidden sm:block"></div>
+                <button onClick={onLogout} className="bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold px-4 py-2 rounded-xl transition-all text-xs active:scale-95">Logout</button>
+              </div>
             </div>
           </div>
           <div className="flex gap-2 overflow-x-auto no-scrollbar">
@@ -578,6 +616,20 @@ export default function TeamLeadDashboard({ session, onLogout }:Props) {
                     <span className="text-xs font-semibold text-gray-600 group-hover:text-[#7b1e3a] transition">Reset rotation from officer 1</span>
                   </label>
 
+                  {!shiftModelId && (
+                    <label className="flex items-center gap-3 cursor-pointer group py-1">
+                      <input type="checkbox" checked={noNightBeforeLeaveSMO} onChange={e=>setNoNightBeforeLeaveSMO(e.target.checked)} 
+                        className="rounded-md border-gray-300 text-[#7b1e3a] focus:ring-[#7b1e3a]" />
+                      <span className="text-xs font-semibold text-gray-600 group-hover:text-[#7b1e3a] transition">No night shift before leave</span>
+                    </label>
+                  )}
+
+                  <label className="flex items-center gap-3 cursor-pointer group py-1 mt-2 p-2 bg-purple-50 rounded-lg border border-purple-100">
+                    <input type="checkbox" checked={useAI} onChange={e=>setUseAI(e.target.checked)} 
+                      className="rounded-md border-gray-300 text-purple-600 focus:ring-purple-600" />
+                    <span className="text-xs font-bold text-purple-800 transition">✨ Optimize with AI Solver</span>
+                  </label>
+
                   <div className="pt-2">
                     <button onClick={handleGenerate} disabled={loading}
                       className="btn-primary w-full flex items-center justify-center gap-3 shadow-[#7b1e3a]/20 shadow-xl">
@@ -673,20 +725,39 @@ export default function TeamLeadDashboard({ session, onLogout }:Props) {
               {/* Past schedules */}
               {pastSchedules.length > 0 && (
                 <div className="glass-card p-6">
-                  <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <CalendarDays size={18} className="text-[#7b1e3a]" />
-                    Past Schedules
-                  </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                      <CalendarDays size={18} className="text-[#7b1e3a]" />
+                      Past Schedules
+                    </h3>
+                    <button onClick={async()=>{ try { await triggerAutoDraft(); toast.success("Draft generated!"); await loadPast(); } catch(e:any) { setError(e.response?.data?.detail??"Failed."); } }}
+                      className="text-[10px] font-bold text-purple-600 hover:text-purple-800 uppercase tracking-wider bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-100 hover:bg-purple-100 transition">
+                      ⚡ Auto-Draft
+                    </button>
+                  </div>
                   <div className="space-y-3">
-                    {pastSchedules.slice(0,5).map((s:any)=>(
+                    {pastSchedules.slice(0,8).map((s:any)=>(
                       <div key={s.id} className="flex items-center justify-between bg-white/40 border border-gray-100 rounded-xl px-4 py-3">
-                        <div>
-                          <p className="font-bold text-sm text-gray-800">{MONTHS[s.month-1]} {s.year}</p>
-                          <span className={`text-[10px] font-bold uppercase tracking-wider ${s.monthly_email_sent?"text-green-500":"text-orange-400"}`}>
-                            {s.monthly_email_sent?"Sent":"Not sent"}
-                          </span>
+                        <div className="flex items-center gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-sm text-gray-800">{MONTHS[s.month-1]} {s.year}</p>
+                              {s.is_published === false && (
+                                <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full border border-yellow-200 animate-pulse">Draft</span>
+                              )}
+                            </div>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${s.monthly_email_sent?"text-green-500":"text-orange-400"}`}>
+                              {s.monthly_email_sent?"Sent":"Not sent"}
+                            </span>
+                          </div>
                         </div>
                         <div className="flex gap-2">
+                          {s.is_published === false && (
+                            <button onClick={async()=>{ try { await publishSchedule(s.id); toast.success("Published!"); await loadPast(); } catch(e:any) { setError(e.response?.data?.detail??"Failed."); } }}
+                              className="px-3 py-1.5 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition text-[10px] font-bold uppercase border border-green-200 shadow-sm">
+                              Publish
+                            </button>
+                          )}
                           <button onClick={()=>handleSendEmails(s.id)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition shadow-sm">
                             <ArrowRight size={14} />
                           </button>
@@ -1179,20 +1250,50 @@ export default function TeamLeadDashboard({ session, onLogout }:Props) {
                     </div>
                   ))}
                 </div>
-                {analytics.fairness&&(
-                  <div className={`p-4 rounded-xl border ${analytics.fairness.score>=75?"bg-green-50 border-green-200 text-green-800":analytics.fairness.score>=50?"bg-yellow-50 border-yellow-200 text-yellow-800":"bg-red-50 border-red-200 text-red-800"}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <p className="font-semibold text-sm">Fairness Score — {analytics.fairness.label}</p>
-                        <p className="text-xs opacity-80 mt-0.5">{analytics.fairness.detail}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {analytics.fairness&&(
+                    <div className={`p-4 rounded-xl border ${analytics.fairness.score>=75?"bg-green-50 border-green-200 text-green-800":analytics.fairness.score>=50?"bg-yellow-50 border-yellow-200 text-yellow-800":"bg-red-50 border-red-200 text-red-800"}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="font-semibold text-sm">Equity Score — {analytics.fairness.label}</p>
+                          <p className="text-xs opacity-80 mt-0.5">{analytics.fairness.detail}</p>
+                        </div>
+                        <div className="text-2xl font-bold">{analytics.fairness.score}</div>
                       </div>
-                      <div className="text-3xl font-bold">{analytics.fairness.score}</div>
+                      <div className="bg-white bg-opacity-50 rounded-full h-1.5 overflow-hidden">
+                        <div className="h-1.5 rounded-full transition-all duration-1000" style={{width:`${analytics.fairness.score}%`,background:analytics.fairness.score>=75?"#16a34a":analytics.fairness.score>=50?"#d97706":"#dc2626"}} />
+                      </div>
                     </div>
-                    <div className="bg-white bg-opacity-50 rounded-full h-2 overflow-hidden">
-                      <div className="h-2 rounded-full" style={{width:`${analytics.fairness.score}%`,background:analytics.fairness.score>=75?"#16a34a":analytics.fairness.score>=50?"#d97706":"#dc2626"}} />
+                  )}
+                  {analytics.fatigue&&(
+                    <div className={`p-4 rounded-xl border ${analytics.fatigue.score>=70?"bg-red-50 border-red-200 text-red-800":analytics.fatigue.score>=40?"bg-yellow-50 border-yellow-200 text-yellow-800":"bg-green-50 border-green-200 text-green-800"}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="font-semibold text-sm">Fatigue Risk — {analytics.fatigue.label}</p>
+                          <p className="text-xs opacity-80 mt-0.5">{analytics.fatigue.detail}</p>
+                        </div>
+                        <div className="text-2xl font-bold">{analytics.fatigue.score}</div>
+                      </div>
+                      <div className="bg-white bg-opacity-50 rounded-full h-1.5 overflow-hidden">
+                        <div className="h-1.5 rounded-full transition-all duration-1000" style={{width:`${analytics.fatigue.score}%`,background:analytics.fatigue.score>=70?"#dc2626":analytics.fatigue.score>=40?"#d97706":"#16a34a"}} />
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                  {analytics.satisfaction&&(
+                    <div className={`p-4 rounded-xl border ${analytics.satisfaction.score>=80?"bg-green-50 border-green-200 text-green-800":analytics.satisfaction.score>=50?"bg-yellow-50 border-yellow-200 text-yellow-800":"bg-red-50 border-red-200 text-red-800"}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="font-semibold text-sm">Satisfaction — {analytics.satisfaction.label}</p>
+                          <p className="text-xs opacity-80 mt-0.5">{analytics.satisfaction.detail}</p>
+                        </div>
+                        <div className="text-2xl font-bold">{analytics.satisfaction.score}%</div>
+                      </div>
+                      <div className="bg-white bg-opacity-50 rounded-full h-1.5 overflow-hidden">
+                        <div className="h-1.5 rounded-full transition-all duration-1000" style={{width:`${analytics.satisfaction.score}%`,background:analytics.satisfaction.score>=80?"#16a34a":analytics.satisfaction.score>=50?"#d97706":"#dc2626"}} />
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {(analytics.current?.officers??[]).length>0&&(
                   <div>
                     <p className="text-sm font-bold text-gray-700 mb-3">Shifts per officer</p>
@@ -1332,6 +1433,7 @@ export default function TeamLeadDashboard({ session, onLogout }:Props) {
           </div>
         )}
       </div>
+      <ChatPanel session={session} />
     </div>
   );
 }

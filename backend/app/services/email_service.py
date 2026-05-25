@@ -9,19 +9,36 @@ except ImportError:
     logger.warning("[EMAIL] fastapi-mail not installed — emails will be skipped")
 
 
+def _get_bool_env(name: str, default: bool) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.lower() in ("true", "1", "yes", "on")
+
+
 def _get_conf():
     u = os.getenv("MAIL_USERNAME", "")
     p = os.getenv("MAIL_PASSWORD", "")
     if not u or not p or not MAIL_ENABLED:
         return None
+    
+    server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    try:
+        port = int(os.getenv("MAIL_PORT", "587"))
+    except ValueError:
+        port = 587
+        
+    starttls = _get_bool_env("MAIL_STARTTLS", True)
+    ssl_tls = _get_bool_env("MAIL_SSL_TLS", False)
+
     return ConnectionConfig(
         MAIL_USERNAME   = u,
         MAIL_PASSWORD   = p,
         MAIL_FROM       = os.getenv("MAIL_FROM", u),
-        MAIL_PORT       = 587,
-        MAIL_SERVER     = "smtp.gmail.com",
-        MAIL_STARTTLS   = True,
-        MAIL_SSL_TLS    = False,
+        MAIL_PORT       = port,
+        MAIL_SERVER     = server,
+        MAIL_STARTTLS   = starttls,
+        MAIL_SSL_TLS    = ssl_tls,
         USE_CREDENTIALS = True,
     )
 

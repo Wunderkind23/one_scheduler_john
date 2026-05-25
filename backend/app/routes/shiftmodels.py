@@ -38,7 +38,10 @@ class ShiftModelIn(BaseModel):
     working_days:         Optional[List[str]] = None
     max_concurrent_leave: int                 = 1
     night_continues:      bool                = True
+    no_night_before_leave: bool               = False
     rotation_pattern:     Optional[List[str]] = None
+    max_consecutive_workdays: int             = 6
+    min_rest_hours_between_shifts: int        = 12
 
     @field_validator("unit_name")
     @classmethod
@@ -72,7 +75,10 @@ def _to_dict(m: ShiftModel) -> dict:
         "working_days":         m.working_days,
         "max_concurrent_leave": m.max_concurrent_leave,
         "night_continues":      m.night_continues,
+        "no_night_before_leave": m.no_night_before_leave,
         "rotation_pattern":     m.rotation_pattern,
+        "max_consecutive_workdays": m.max_consecutive_workdays if m.max_consecutive_workdays is not None else 6,
+        "min_rest_hours_between_shifts": m.min_rest_hours_between_shifts if m.min_rest_hours_between_shifts is not None else 12,
     }
 
 
@@ -112,7 +118,10 @@ def create_model(
         working_days         = data.working_days,
         max_concurrent_leave = data.max_concurrent_leave,
         night_continues      = data.night_continues,
+        no_night_before_leave = data.no_night_before_leave,
         rotation_pattern     = data.rotation_pattern,
+        max_consecutive_workdays = data.max_consecutive_workdays,
+        min_rest_hours_between_shifts = data.min_rest_hours_between_shifts,
     )
     db.add(m)
     db.commit()
@@ -140,7 +149,10 @@ def update_model(
     m.working_days         = data.working_days
     m.max_concurrent_leave = data.max_concurrent_leave
     m.night_continues      = data.night_continues
+    m.no_night_before_leave = data.no_night_before_leave
     m.rotation_pattern     = data.rotation_pattern
+    m.max_consecutive_workdays = data.max_consecutive_workdays
+    m.min_rest_hours_between_shifts = data.min_rest_hours_between_shifts
     db.commit()
     db.refresh(m)
     return _to_dict(m)

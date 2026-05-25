@@ -30,6 +30,9 @@ class ShiftModelCreate(BaseModel):
     enforce_pattern:      bool                = False
     max_concurrent_leave: int                 = 1
     night_continues:      bool                = True
+    no_night_before_leave: bool               = False
+    max_consecutive_workdays: int             = 6
+    min_rest_hours_between_shifts: int        = 12
 
 
 class ShiftModelResponse(ShiftModelCreate):

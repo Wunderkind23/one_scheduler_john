@@ -4,6 +4,8 @@ import LoginPage         from "./pages/Login";
 import TeamSetupPage     from "./pages/TeamSetupPage";
 import TeamLeadDashboard from "./pages/TeamLeadDashboard";
 import OfficerDashboard  from "./pages/OfficerDashboard";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import PushPrompt from "./components/PushPrompt";
 import SkeletonLoader from "./components/SkeletonLoader";
 
 export default function App() {
@@ -21,6 +23,7 @@ export default function App() {
         role:         me.role as any,
         team_id:      me.team_id,
         team_name:    me.team_name,
+        is_superadmin: me.is_superadmin,
       }))
       .catch(() => {
         // Token expired or invalid — clear and go to login
@@ -51,6 +54,7 @@ export default function App() {
         role:         me.role as any,
         team_id:      me.team_id,
         team_name:    me.team_name,
+        is_superadmin: me.is_superadmin,
       }))
       .catch(() => {
         if (session) setSession({ ...session, ...updated });
@@ -78,6 +82,7 @@ export default function App() {
     );
   }
 
-  if (session.role === "teamlead") return <TeamLeadDashboard session={session} onLogout={handleLogout} />;
-  return <OfficerDashboard session={session} onLogout={handleLogout} />;
+  if (session.is_superadmin) return <><SuperAdminDashboard session={session} onLogout={handleLogout} /><PushPrompt/></>;
+  if (session.role === "teamlead") return <><TeamLeadDashboard session={session} onLogout={handleLogout} /><PushPrompt/></>;
+  return <><OfficerDashboard session={session} onLogout={handleLogout} /><PushPrompt/></>;
 }

@@ -18,7 +18,15 @@ logs/
 # Node
 node_modules/
 dist/
+
+# Mac
 .DS_Store
 
 # Build
 frontend/dist/
+
+# Migrations (auto-generated)
+migrations/
+
+# Alembic
+alembic.ini

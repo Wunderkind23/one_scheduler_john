@@ -28,6 +28,7 @@ export default function ShiftModelForm({ onSave, onCancel }: Props) {
   const [selectedDays,  setSelectedDays]  = useState<string[]>([...ALL_DAYS]);
   const [maxLeave,      setMaxLeave]      = useState(1);
   const [nightCont,     setNightCont]     = useState(true);
+  const [noNightBeforeLeave, setNoNightBeforeLeave] = useState(false);
   const [saving,        setSaving]        = useState(false);
   const [error,         setError]         = useState("");
 
@@ -69,6 +70,7 @@ export default function ShiftModelForm({ onSave, onCancel }: Props) {
         working_days:         allSelected ? null : selectedDays,
         max_concurrent_leave: maxLeave,
         night_continues:      nightCont,
+        no_night_before_leave: noNightBeforeLeave,
       });
     } catch (e: any) {
       setError(e?.message ?? "Failed to save.");
@@ -279,6 +281,21 @@ export default function ShiftModelForm({ onSave, onCancel }: Props) {
             </p>
           </div>
         </label>
+
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={noNightBeforeLeave}
+            onChange={(e) => setNoNightBeforeLeave(e.target.checked)}
+            className="rounded mt-0.5"
+          />
+          <div>
+            <p className="text-xs font-semibold text-gray-700">No night shift before leave</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Restricts night shift on the day prior to approved leave.
+            </p>
+          </div>
+        </label>
       </div>
 
       {/* Live preview */}
@@ -294,6 +311,7 @@ export default function ShiftModelForm({ onSave, onCancel }: Props) {
           {selectedDays.length === 7 ? "7 days/week" : selectedDays.length === 0 ? "No working days" : `${selectedDays.length} days/week`}
           {" · "}Max {maxLeave} on leave simultaneously
           {nightCont ? " · Night continues to 7AM" : ""}
+          {noNightBeforeLeave ? " · No night shift before leave" : ""}
         </p>
       </div>
 

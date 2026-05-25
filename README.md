@@ -39,6 +39,14 @@ one_schedular/
 └── docker-compose.yml
 ```
 
+## Features
+
+- **Automated Scheduling**: Generate optimal monthly shift schedules based on custom team models and rotation patterns.
+- **Team Isolation**: Strict data segregation ensures Team Leads and Officers only see and manage schedules, officers, and requests within their own team.
+- **Leave Management & Auto-Updates**: Officers can request leave. When a Team Lead approves the leave, the system automatically tags the officer as `(Leave)` in the main schedule and syncs their individual shift assignments.
+- **Shift Swapping with Validation**: Officers can swap shifts. The system strictly validates that both officers are actively scheduled on the requested dates. Upon Team Lead approval, the schedule and underlying assignments automatically swap the two officers.
+- **Email Notifications**: Seamless integration with background tasks to dispatch monthly schedules directly to team members.
+
 ## Quick Start
 
 ### 1. Set up backend env

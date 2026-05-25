@@ -28,6 +28,7 @@ export default function ShiftModelBuilder({ onSaved }: Props) {
   const [allDays,     setAllDays]     = useState(true);
   const [maxLeave,    setMaxLeave]    = useState(1);
   const [nightCont,   setNightCont]   = useState(true);
+  const [noNight,     setNoNight]     = useState(false);
   const [error,       setError]       = useState("");
   const [saving,      setSaving]      = useState(false);
   const [success,     setSuccess]     = useState("");
@@ -39,7 +40,7 @@ export default function ShiftModelBuilder({ onSaved }: Props) {
 
   const reset = () => {
     setUnitName(""); setTypes(defaults.map((s) => ({ ...s, id: makeId() })));
-    setDays([...ALL_DAYS]); setAllDays(true); setMaxLeave(1); setNightCont(true);
+    setDays([...ALL_DAYS]); setAllDays(true); setMaxLeave(1); setNightCont(true); setNoNight(false);
     setEditingId(null); setError(""); setShowForm(false);
   };
 
@@ -50,6 +51,7 @@ export default function ShiftModelBuilder({ onSaved }: Props) {
     setDays(wd); setAllDays(wd.length === 7);
     setMaxLeave(m.max_concurrent_leave ?? 1);
     setNightCont(m.night_continues ?? true);
+    setNoNight(m.no_night_before_leave ?? false);
     setEditingId(m.id); setShowForm(true);
   };
 
@@ -73,6 +75,7 @@ export default function ShiftModelBuilder({ onSaved }: Props) {
       working_days:         allDays ? null : days,
       max_concurrent_leave: maxLeave,
       night_continues:      nightCont,
+      no_night_before_leave: noNight,
     };
     setError(""); setSaving(true); setSuccess("");
     try {
@@ -184,7 +187,7 @@ export default function ShiftModelBuilder({ onSaved }: Props) {
                 SMO default is 1. Generation blocks if exceeded.
               </p>
             </div>
-            <div className="flex items-start pt-5">
+            <div className="flex flex-col gap-3 pt-5">
               <label className="flex items-start gap-2 cursor-pointer">
                 <input type="checkbox" checked={nightCont}
                   onChange={(e) => setNightCont(e.target.checked)} className="rounded mt-0.5" />
@@ -192,6 +195,16 @@ export default function ShiftModelBuilder({ onSaved }: Props) {
                   Night shift continues to 7AM next day
                   <span className="block text-xs text-gray-400 mt-0.5">
                     Adds 12AM–7AM column in timetable
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="checkbox" checked={noNight}
+                  onChange={(e) => setNoNight(e.target.checked)} className="rounded mt-0.5" />
+                <span className="text-sm text-gray-700">
+                  No night shift before leave
+                  <span className="block text-xs text-gray-400 mt-0.5">
+                    Restricts night shift on the day prior to approved leave
                   </span>
                 </span>
               </label>

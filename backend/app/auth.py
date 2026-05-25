@@ -58,6 +58,20 @@ def get_current_user(
         raise HTTPException(401, "User account not found. Please log in again.")
     return user
 
+async def get_current_user_ws(token: str):
+    from .database import SessionLocal
+    db = SessionLocal()
+    try:
+        payload = _decode(token)
+        email: str = payload.get("sub")
+        if email is None:
+            return None
+        return db.query(User).filter(User.email == email).first()
+    except Exception:
+        return None
+    finally:
+        db.close()
+
 
 def get_role(user: User, db: Session) -> str:
     """

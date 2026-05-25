@@ -28,6 +28,7 @@ class User(Base):
     password     = Column(String, nullable=False)
     display_name = Column(String, nullable=True)
     team_id      = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    is_superadmin = Column(Boolean, default=False)
     team         = relationship("Team", foreign_keys=[team_id])
 
 
@@ -56,7 +57,10 @@ class ShiftModel(Base):
     working_days         = Column(JSON, nullable=True)
     max_concurrent_leave = Column(Integer, default=1)
     night_continues      = Column(Boolean, default=True)
+    no_night_before_leave = Column(Boolean, default=False)
     rotation_pattern     = Column(JSON, nullable=True)  # List of shift names or "Off"
+    max_consecutive_workdays = Column(Integer, default=6)
+    min_rest_hours_between_shifts = Column(Integer, default=12)
 
     @property
     def morning_count(self):
@@ -84,6 +88,7 @@ class Schedule(Base):
     data               = Column(Text, nullable=False)
     rotation_offset    = Column(Integer, default=0)
     monthly_email_sent = Column(Boolean, default=False)
+    is_published       = Column(Boolean, default=True)
     created_at         = Column(DateTime, default=datetime.utcnow)
 
     team        = relationship("Team", back_populates="schedules")
@@ -148,9 +153,11 @@ class ShiftSwapRequest(Base):
     team_id        = Column(Integer, ForeignKey("teams.id"), nullable=False)
     schedule_id    = Column(Integer, ForeignKey("schedules.id"), nullable=True)
     requester_name = Column(String, nullable=False)
-    target_name    = Column(String, nullable=False)
+    target_name    = Column(String, nullable=True)
     requester_date = Column(String, nullable=False)
     target_date    = Column(String, nullable=False)
+    requester_shift = Column(String, nullable=True)
+    target_shift    = Column(String, nullable=True)
     reason         = Column(String, nullable=True)
     status         = Column(String, default="pending")
     resolved_by    = Column(String, nullable=True)
@@ -158,9 +165,48 @@ class ShiftSwapRequest(Base):
     resolved_at    = Column(DateTime, nullable=True)
 
 
+class ShiftPreference(Base):
+    __tablename__ = "shift_preferences"
+    id          = Column(Integer, primary_key=True, index=True)
+    team_id     = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    officer_id  = Column(Integer, ForeignKey("officers.id"), nullable=False)
+    year        = Column(Integer, nullable=False)
+    month       = Column(Integer, nullable=False)
+    dates_json  = Column(String, nullable=False) # JSON array of date strings
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
 class AppSettings(Base):
     __tablename__ = "app_settings"
     id      = Column(Integer, primary_key=True, index=True)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     key     = Column(String, nullable=False)
     value   = Column(String, nullable=True)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id         = Column(Integer, primary_key=True, index=True)
+    team_id    = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    user_email = Column(String, nullable=False)
+    message    = Column(String, nullable=False)
+    is_read    = Column(Boolean, default=False)
+    link       = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class AppNotification(Base):
+    __tablename__ = "app_notifications"
+    id         = Column(Integer, primary_key=True, index=True)
+    user_email = Column(String, index=True)
+    title      = Column(String)
+    message    = Column(String)
+    is_read    = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_email = Column(String, index=True)
+    endpoint = Column(String)
+    p256dh = Column(String)
+    auth = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
