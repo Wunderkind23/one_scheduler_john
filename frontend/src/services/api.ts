@@ -106,10 +106,10 @@ export type ShiftModelPayload = Omit<ShiftModelRecord, "id" | "team_id">;
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export const login = async (email: string, password: string): Promise<UserSession> =>
-  (await api.post("/login", { email, password })).data;
+  (await api.post("/api/admin/login", { email, password })).data;
 
 export const getMe = async (): Promise<UserSession> =>
-  (await api.get("/me")).data;
+  (await api.get("/api/admin/me")).data;
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
 
